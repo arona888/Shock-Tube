@@ -4,18 +4,26 @@ clear
 clc
 %% Initialization of Parameters
 N       = 800 ;             % Number of grid points
-gamma   = 1.4 ;
-endTime = 0.2 ;             % Physical End Time
+gamma   = 1.313 ;
+endTime = 0.0002 ;             % Physical End Time
 CFL     = 1.0 ;
 %% Grid Initialization
-x       = linspace(0,1,N+1) ;
-xc      = 0.5 * ( x(1:N) + x(2:N+1) ) ;
-xc(1)   = 0 ;               % Xmin
-xc(N)   = 1 ;               % Xmax
+%x       = linspace(0,1,N+1) ;
+x       = linspace(0,1,N) ;
+xc = x;
+%x = linspace(0,100, N + 1);
+dx = xc(2) - xc(1);
+%xc      = 0.5 * ( x(1:N) + x(2:N+1) ) ;
+%xc(1)   = 0 ;               % Xmin
+%xc(N)   = 1 ;               % Xmax
+%xc(N)   = 100 ;               % Xmax
 time    = 0 ;
 %% Initial Conidtions
-denistyR    = 0.125 ;       densityL    = 1.0 ;
-pressureR   = 0.1   ;       pressureL   = 1.0 ;
+%denistyR    = 0.125 ;       densityL    = 1.0 ;
+%pressureR   = 0.1   ;       pressureL   = 1.0 ;
+
+denistyR    = 0.72 * 7 ;       densityL    = 0.72 * 300 ;
+pressureR   = 7 * 100000   ;       pressureL   = 300 * 100000 ;
 
 rho     = zeros(N,1) ;
 p       = zeros(N,1) ;
@@ -51,8 +59,10 @@ while time <= endTime
     lamda   = max(a) ;
     max_vel = max(u) ;
     
-    dt      = CFL/N/(max_vel+lamda) ;  % adjustable Time Step
+    %dt      = CFL/N/(max_vel+lamda) ;  % adjustable Time Step
+    dt      = dx * CFL/(max_vel+lamda) ;  % adjustable Time Step
     time    = time + dt ;
+    fprintf("time: %f\n", time);
     
     for i=2:N-1
         dx          = xc(i) - xc(i-1) ;
@@ -107,6 +117,14 @@ while time <= endTime
         new_u(i)    = vel_flux/new_rho(i) ;
         
     end
+
+    new_rho(1) = new_rho(2);
+    new_e(1) = new_e(2);
+    new_u(1) = new_u(2);
+
+    new_rho(N) = new_rho(N - 1);
+    new_e(N) = new_e(N - 1);
+    new_u(N) = new_u(N - 1);
     
     rho     = new_rho ;
     u       = new_u ;
@@ -114,33 +132,33 @@ while time <= endTime
     
 end
 
-pressure = dlmread('pressure.dat') ;
-density  = dlmread('density.dat')  ;
-velocity = dlmread('velocity.dat') ;
-
-figure(1)
-hold on
-plot(density(:,1),density(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
-plot(xc,rho,'k','LineWidth',2);
-xlabel(' x ','FontSize',18,'FontWeight','bold');
-ylabel(' Density ','FontSize',18,'FontWeight','bold');
-legend('Analytical','Roe','Location','northeast','FontSize',16,'FontWeight','bold');
-%print(gcf,'Density_Roe.jpg','-dpng','-r300');
-
-figure(2)
-hold on
-plot(pressure(:,1),pressure(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
-plot(xc,p,'k','MarkerSize',12,'MarkerIndices',1:10:141,'LineWidth',2);
-xlabel(' x ','FontSize',18,'FontWeight','bold');
-ylabel(' Pressure ','FontSize',18,'FontWeight','bold');
-legend('Analytical','Roe','Location','northeast','FontSize',16,'FontWeight','bold');
-%print(gcf,'Pressure_Roe.jpg','-dpng','-r300');
-
-figure(3)
-hold on
-plot(velocity(:,1),velocity(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
-plot(xc,u,'k','MarkerSize',12,'MarkerIndices',1:10:141,'LineWidth',2);
-xlabel(' x ','FontSize',18,'FontWeight','bold');
-ylabel(' Velocity ','FontSize',18,'FontWeight','bold');
-legend('Analytical','Roe','Location','south','FontSize',16,'FontWeight','bold');
+% pressure = dlmread('pressure.dat') ;
+% density  = dlmread('density.dat')  ;
+% velocity = dlmread('velocity.dat') ;
+% 
+% figure(1)
+% hold on
+% plot(density(:,1),density(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
+% plot(xc,rho,'k','LineWidth',2);
+% xlabel(' x ','FontSize',18,'FontWeight','bold');
+% ylabel(' Density ','FontSize',18,'FontWeight','bold');
+% legend('Analytical','Roe','Location','northeast','FontSize',16,'FontWeight','bold');
+% %print(gcf,'Density_Roe.jpg','-dpng','-r300');
+% 
+% figure(2)
+% hold on
+% plot(pressure(:,1),pressure(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
+% plot(xc,p,'k','MarkerSize',12,'MarkerIndices',1:10:141,'LineWidth',2);
+% xlabel(' x ','FontSize',18,'FontWeight','bold');
+% ylabel(' Pressure ','FontSize',18,'FontWeight','bold');
+% legend('Analytical','Roe','Location','northeast','FontSize',16,'FontWeight','bold');
+% %print(gcf,'Pressure_Roe.jpg','-dpng','-r300');
+% 
+% figure(3)
+% hold on
+% plot(velocity(:,1),velocity(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
+% plot(xc,u,'k','MarkerSize',12,'MarkerIndices',1:10:141,'LineWidth',2);
+% xlabel(' x ','FontSize',18,'FontWeight','bold');
+% ylabel(' Velocity ','FontSize',18,'FontWeight','bold');
+% legend('Analytical','Roe','Location','south','FontSize',16,'FontWeight','bold');
 %print(gcf,'Velocity_Roe.jpg','-dpng','-r300');
