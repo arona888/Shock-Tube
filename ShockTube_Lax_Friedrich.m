@@ -3,7 +3,7 @@
 clearvars -except pressure_plot_save u_plot_save T_plot_save e_plot_save rho_plot_save
 clc
 %% Initialization of Parameters
-N       = 2000;             % Number of grid points
+N       = 100;             % Number of grid points
 %gamma   = 1.4 ;
 %gamma = 1.313; %methane
 Cv = 1709.;
@@ -14,22 +14,33 @@ gamma = Cp / Cv;
 
 
 dia = 1.15; %pipe inner diameter
-rough = 0.05 * 1e-3;
+%rough = 0.05 * 1e-3; %steel
+rough = 0.0015 * 1e-3; %plastic
 lambda = 1 / (-2*log10(rough/(3.7 * dia)))^2;
 %lambda = 0.1; %fanning friction coefficient
-
 %lambda = 1;
 %
 %lambda = 0.0;
 
+
+
 area = dia.^2/4*pi;
+circum = dia * pi;
+Kconcrete = 4; %thermal conductivity (W/(mK))
+Ksteel = 50;
+
+thick=4.3*2.54*0.01; %thickness of concrete wall
+wattperkelvinpermeter = Kconcrete/thick*circum; % W/(mK)
+wattperkelvinperm3 = wattperkelvinpermeter / area; %(W/(m^3K))
 
 save_ = 1;
 load_ = 0;
 
 shocktube = 1;
+model_temperature = 1;
 
 endTime = 3600 * 24 * 3;             % Physical End Time
+%endTime = 10;
 %endTime = 60/433;
 %endTime = 400/433;
 
@@ -39,12 +50,33 @@ dt_pplot = endTime / 10;
 CFL     = 0.3;
 %% Grid Initialization
 %x       = linspace(0,1,N+1) ;
-%x       = linspace(0, 433 * endTime * 0.1,N) ;
-x = linspace(0, 230000, N);
+%x       = linspace(0, 433 * endTime * 1,N) ;
+%x = linspace(0, 230000, N);
 %x = linspace(0, 1000000, N);
-xc = x;
+
+fac = 1.1;
+
+dx_init = -1;
+dx_c = dx_init;
+pos = 0;
+
+x = zeros(1);
+
+while (x(end) > -1000000)
+    x = [x, x(end) + dx_c];
+    dx_c = dx_c * fac;
+end
+
+x = x(end:-1:1) - x(end);
+
+N = length(x) - 1;
+
+%x = logspace(0, 6, N + 1);
+%x = -x(end:-1:1) + x(end);
+xc = 0.5 * (x(1:end-1) + x(2:end));
 %x = linspace(0,100, N + 1);
-dx = xc(2) - xc(1);
+%dx = xc(2) - xc(1);
+dx = diff(x);
 %xc      = 0.5 * ( x(1:N) + x(2:N+1) ) ;
 %xc(1)   = 0 ;               % Xmin
 %xc(N)   = 1 ;               % Xmax
@@ -185,6 +217,7 @@ e_right = [];
 e_left = [];
 plot_times = [];
 tot_e = [];
+p_base = [];
 
 pressure_plot = [];
 e_plot = [];
@@ -195,8 +228,6 @@ T_plot = [];
 plot_time = time;
 
 pplot_time = time;
-
-e(N-1) = e(N-2) * 0.5;
 
 while time <= endTime
 %     
@@ -209,16 +240,18 @@ while time <= endTime
     p = (gamma-1)*(e - 0.5*rho.*u.*u) ;
     T = p ./ (rho * Rgas);
 
+    
+
     %p_  / (new_rho(i) * Cv * T(i) * (gamma - 1)
 
     a       = sqrt(gamma*p./rho) ;
     lamda   = max(a) ;
-    max_vel = max(u) ;
+    max_vel = max(abs(u)) ;
     
-    dt      = CFL/(max_vel+lamda) * dx ;  % adjustable Time Step
+    dt      = min(CFL./(a(:)+abs(u(:))) .* dx(:)) ;  % adjustable Time Step
     time    = time + dt ;
 
-    fprintf("time: %f\n", time);
+    %fprintf("time: %f\n", time);
     
     for i=2:N-1
         
@@ -251,32 +284,60 @@ while time <= endTime
         energy_fluxL    = 0.5*( energy_flux_P + energy_flux_L ) -0.5*lambda_L*( e_P - e_L );
 
         if (i == N - 1)
-        
-        %if (0)
-            energy_fluxR = energy_flux_P;
-            if (0)
-                vel_fluxR = vel_flux_P;
+            if (u(N-1) < a(N-1) && u(N - 1) > 0) 
+                vc = u(N - 1) / a(N - 1);
+
+                xd = vc * (1 + gamma) / (2 - vc + vc*gamma);
+
+                uoutlet = u(N - 1) / xd;
+
+                c0 = 0.5 * (1 + gamma) * uoutlet;
+
+                p0 = p(N - 1) * (c0 / a(N - 1)) ^ (2*gamma/ (gamma - 1));
+
+                poutlet = p0 * (2 / (1 + gamma))^(2*gamma/(gamma - 1));
+
+                rhooutlet = gamma * poutlet / uoutlet^2;
+
+                eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
+
+                
+
+            elseif (u(N - 1) == 0) 
+                uoutlet = 2 / (1 + gamma) * a(N - 1);
+                poutlet = p(N - 1)*(2 / (1 + gamma)) ^ (2 * gamma / (gamma - 1));
+                rhooutlet = gamma * poutlet / uoutlet^2;
+                eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
             end
-            rho_fluxR = mom_P;
+
+            rho_fluxR = rhooutlet * uoutlet;
+            energy_fluxR = uoutlet * (eoutlet + poutlet);
+            vel_fluxR = rhooutlet * uoutlet^2 + poutlet;
+        %if (0)
+            %energy_fluxR = energy_flux_P;
+            %if (0)
+            %    vel_fluxR = vel_flux_P;
+            %end
+            %rho_fluxR = mom_P;
         end
         
 
 
 
-        vel_flux    = mom_P - dt/dx * ( vel_fluxR - vel_fluxL ) ;
+        vel_flux    = mom_P - dt/dx(i) * ( vel_fluxR - vel_fluxL ) ;
         
-        new_rho(i)  = rho_P - dt/dx * ( rho_fluxR - rho_fluxL ) ;
+        new_rho(i)  = rho_P - dt/dx(i) * ( rho_fluxR - rho_fluxL ) ;
         
         %vel_flux = mom_P - dt/dx * ( vel_fluxR - vel_fluxL ) - dt*fric + dt*0;
         
         new_u(i)    = vel_flux/new_rho(i) ;
-        new_e(i)    = e_P - dt/dx * ( energy_fluxR - energy_fluxL ) ;
+        new_e(i)    = e_P - dt/dx(i) * ( energy_fluxR - energy_fluxL ) ;
 
         if (i == 2)
-            new_rho(1) = rho(1) - dt/dx * rho_fluxL;
-            mom1 = rho(1)*u(1) - dt/dx * (vel_fluxL - (0*rho(1)*u(1).^2 +p(1)));
+            new_rho(1) = rho(1) - dt/dx(i) * rho_fluxL;
+            mom1 = rho(1)*u(1) - dt/dx(i) * (vel_fluxL - (0*rho(1)*u(1).^2 +p(1)));
             new_u(1) = mom1 / new_rho(1);
-            new_e(1) = e(1) - dt/dx * (energy_fluxL - 0*(u(1) * ( e(1) + p(1) )));
+            new_e(1) = e(1) - dt/dx(i) * (energy_fluxL - 0*(u(1) * ( e(1) + p(1) )));
         end
 % 
 %         if (i == N - 1)
@@ -310,6 +371,22 @@ while time <= endTime
         
     end
 
+    if (model_temperature)
+        new_T = (new_e - 0.5.*u.*u.*rho) ./ (rho * Cv);
+        tdiff = T0 - new_T;
+
+        deltaT = tdiff .* (1 - exp(-dt * wattperkelvinperm3 ./ (rho*Cv)));
+        deltaE = deltaT .* rho .* Cv;
+
+        new_e = new_e + deltaE;
+    end
+
+    %new_T = T0 + delta_T * exp(-dt * wattperkelvinperm3 / (rho*Cv));
+
+
+
+
+    
 
 
 %     vel_flux_1 = p(1);
@@ -334,14 +411,16 @@ while time <= endTime
 
     %fprintf("totmass: %f\n", sum(new_rho));
     if (time >= plot_time)
+        fprintf("time: %f\n", time);
         plot_time = plot_time + dtplot;
         plot_times = [plot_times time];
-        totmass = [totmass sum(new_rho)];
-        mass_right = [mass_right sum(new_rho(N/2:end))];
-        mass_left = [mass_left sum(new_rho(1:N/2-1))];
+        totmass = [totmass sum(new_rho(:).*dx(:).*area)];
+        mass_right = [mass_right sum(new_rho(floor(N/2):end).*dx(floor(N/2):end).*area)];
+        mass_left = [mass_left sum(new_rho(1:floor(N/2)-1).*dx(floor(N/2):end).*area)];
         tot_e = [tot_e sum(new_e)];
-        e_left = [e_left sum(new_e(1:N/2-1))];
-        e_right = [e_right sum(new_e(N/2:end))];
+        e_left = [e_left sum(new_e(1:floor(N/2)-1))];
+        e_right = [e_right sum(new_e(floor(N/2):end))];
+        p_base = [p_base p(1)];
     end
 
     if (time >= pplot_time) 
