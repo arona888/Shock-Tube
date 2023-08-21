@@ -39,7 +39,8 @@ load_ = 0;
 shocktube = 1;
 model_temperature = 1;
 
-endTime = 3600 * 24 * 3;             % Physical End Time
+%endTime = 3600 * 24 * 3;             % Physical End Time
+endTime = 3600*10;
 %endTime = 10;
 %endTime = 60/433;
 %endTime = 400/433;
@@ -62,7 +63,9 @@ pos = 0;
 
 x = zeros(1);
 
-while (x(end) > -1000000)
+
+%while (x(end) > -1000000)
+while (x(end) > -150000)
     x = [x, x(end) + dx_c];
     dx_c = dx_c * fac;
 end
@@ -90,15 +93,19 @@ time    = 0 ;
 
 if (shocktube)
 
-    pressureR   = 0.1 * 100000   ;       pressureL   = 165 * 100000 ;
+    pressureR   = 8 * 100000   ;       pressureL   = 165 * 100000 ;
     %%"nordstream" conditions
 
     %pressureR   = 165 * 100000   ;       pressureL   = 400 * 100000 ;
     
-    T0 = 280;
+    T0 = 285;
+    %penv = 30 * 100000;
+
+    cfacR = methane_compression_factor(T0, pressureR);
+    cfacL = methane_compression_factor(T0, pressureL);
     
     %densityR    = 0.1*0.72 ;       densityL    = 0.72 * 164 ;
-    densityR    = pressureR / (T0 * Rgas) ;       densityL    = pressureL / (T0 * Rgas);
+    densityR    = pressureR / (T0 * Rgas) / cfacR;       densityL    = pressureL / (T0 * Rgas) / cfacL;
     
     cl = sqrt(gamma*pressureL/densityL);
     umid = 2 / (1 + gamma) * cl;
@@ -185,7 +192,10 @@ u0 = u;
 p0 = p;
 rho0 = rho;
 
-T = p ./ (rho .* Rgas);
+%T = p ./ (rho .* Rgas);
+
+T = ones(N,1) * T0;
+e = T * Cv .* rho;
 
 % for i =  1:N
 %     if i<=N - 1
@@ -199,7 +209,7 @@ T = p ./ (rho .* Rgas);
 % end
 
 
-e   = p/(gamma-1) + 0.5*rho.*u.*u ;
+%e   = p/(gamma-1) + 0.5*rho.*u.*u ;
 
 %p = (gamma - 1) * (e  - 0.5 * rho * u * u)
 
@@ -209,6 +219,7 @@ new_rho = rho ;
 new_u   = u   ;
 new_e   = e   ;
 new_T = T;
+new_mom = rho.*u;
 
 totmass = [];
 mass_right = [];
@@ -229,18 +240,31 @@ plot_time = time;
 
 pplot_time = time;
 
+nstep = 0;
+
+tstart = tic;
+
 while time <= endTime
 %     
 %     for i=2:N-1
 %         p(i)    = (gamma-1)*(e(i) - 0.5*rho(i)*u(i)*u(i)) ;
 %     end
 
+    nstep = nstep + 1;
+
     %p(2:N-1) = (gamma-1)*(e(2:N-1) - 0.5*rho(2:N-1).*u(2:N-1).*u(2:N-1)) ;
     %T(2:N-1) = p(2:N-1) ./ (rho(2:N-1) * Rgas);
-    p = (gamma-1)*(e - 0.5*rho.*u.*u) ;
-    T = p ./ (rho * Rgas);
+
+    %p = (gamma-1)*(e - 0.5*rho.*u.*u) ;
+    %T = p ./ (rho * Rgas);
 
     
+    T = (e - 0.5*rho.*u.^2) ./ (Cv .* rho);
+    %previous time step pressure to avoid making this insanely
+    %complicated...
+    cfac = methane_compression_factor(T, p);
+    
+    p = T .* rho * Rgas .* cfac;
 
     %p_  / (new_rho(i) * Cv * T(i) * (gamma - 1)
 
@@ -252,7 +276,100 @@ while time <= endTime
     time    = time + dt ;
 
     %fprintf("time: %f\n", time);
+    if (1)
+    mom = rho .* u;
+    lambda_t = abs(u) + sqrt(gamma * p ./ rho);
+
+    lambda_e = max(lambda_t(1:end-1), lambda_t(2:end));
+
+    mom_flux_t = rho.*u.*u + p;
+    energy_flux_t = u .* (e + p);
+
+    rho_flux_e = 0.5 * (mom(1:end-1) + mom(2:end)) + 0.5 * lambda_e .* (rho(1:end-1) - rho(2:end));
+    mom_flux_e = 0.5 * (mom_flux_t(1:end-1) + mom_flux_t(2:end)) + 0.5 * lambda_e .* (mom(1:end-1) - mom(2:end));
+    energy_flux_e = 0.5 * (energy_flux_t(1:end-1) + energy_flux_t(2:end)) + 0.5 * lambda_e .* (e(1:end-1) - e(2:end));
     
+    %if (u(N-1) < a(N-1) && u(N - 1) > 0)
+    if (0)
+        vc = u(N - 1) / a(N - 1);
+
+        xd = vc * (1 + gamma) / (2 - vc + vc*gamma);
+
+        uoutlet = u(N - 1) / xd;
+
+        c0 = 0.5 * (1 + gamma) * uoutlet;
+
+        p0 = p(N - 1) * (c0 / a(N - 1)) ^ (2*gamma/ (gamma - 1));
+
+        poutlet = p0 * (2 / (1 + gamma))^(2*gamma/(gamma - 1));
+        rhooutlet = gamma * poutlet / uoutlet^2;
+        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
+
+        %if (poutlet < pressureR) 
+        if (0)
+            %if choke pressure is lower than environment pressure, find
+            %point on rarefaction curve corresponding to penv
+
+            coutlet = c0 * (penv / p0) ^ (0.5 - 1/(2 * gamma));
+
+            cf = coutlet / c0;
+
+            xoutlet = -(cf - 1) * (1 + gamma) / (gamma - 1); %dimensionless distance along rarefaction at outlet
+
+            uoutlet = xoutlet * uoutlet + (1 - xoutlet) * c0;
+            rhooutlet = gamma * poutlet / coutlet^2;
+            poutlet = penv;
+
+            
+        end
+
+        if (poutlet > pressureR) 
+            rho_flux_e(end) = rhooutlet * uoutlet;
+            energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
+            mom_flux_e(end) = rhooutlet * uoutlet^2 + poutlet;
+        end
+
+    elseif (u(N - 1) == 0)
+        uoutlet = 2 / (1 + gamma) * a(N - 1);
+        poutlet = p(N - 1)*(2 / (1 + gamma)) ^ (2 * gamma / (gamma - 1));
+        rhooutlet = gamma * poutlet / uoutlet^2;
+        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
+
+        rho_flux_e(end) = rhooutlet * uoutlet;
+        energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
+        mom_flux_e(end) = rhooutlet * uoutlet^2 + poutlet;
+    end
+
+    
+
+    new_rho(2:end-1) = rho(2:end-1) + dt ./ dx(2:end-1)' .* (rho_flux_e(1:end-1) - rho_flux_e(2:end));
+    new_mom(2:end-1) = mom(2:end-1) + dt ./ dx(2:end-1)' .* (mom_flux_e(1:end-1) - mom_flux_e(2:end));
+    new_e(2:end-1) = e(2:end-1) + dt./dx(2:end-1)' .* (energy_flux_e(1:end-1) - energy_flux_e(2:end));
+
+    
+
+    new_rho(1) = rho(1) - dt/dx(1) * rho_flux_e(1);
+    mom1 = rho(1)*u(1) - dt/dx(1) * (mom_flux_e(1) - (0*rho(1)*u(1).^2 +p(1)));
+    new_u(1) = mom1 / new_rho(1);
+    new_e(1) = e(1) - dt/dx(1) * (energy_flux_e(1) - 0*(u(1) * ( e(1) + p(1) )));
+
+    new_u(2:end-1) = new_mom(2:end-1) ./ new_rho(2:end-1);
+
+    u_fric = (2 * new_u) ./ (1+sqrt(1+(16*dt.*abs(new_u) * lambda) / dia));
+    
+    new_u = u_fric;
+
+    if (any(imag(new_u) ~= 0))
+        u = 1;
+    end
+
+    if (any(imag(new_e) ~= 0))
+        u = 1;
+    end
+    
+    end
+    
+    if (0)
     for i=2:N-1
         
 
@@ -263,6 +380,7 @@ while time <= endTime
         lambda_P = abs(u(i)) + sqrt(gamma * p(i) / rho(i));
         lambda_L = abs(u(i - 1)) + sqrt(gamma * p(i - 1) / rho(i - 1));
         lambda_R = abs(u(i + 1)) + sqrt(gamma * p(i + 1) / rho(i + 1));
+
         lambda_L = max(lambda_L, lambda_P);
         lambda_R = max(lambda_R, lambda_P);
         
@@ -371,6 +489,8 @@ while time <= endTime
         
     end
 
+    end
+
     if (model_temperature)
         new_T = (new_e - 0.5.*u.*u.*rho) ./ (rho * Cv);
         tdiff = T0 - new_T;
@@ -386,32 +506,13 @@ while time <= endTime
 
 
 
-    
-
-
-%     vel_flux_1 = p(1);
-% 
-%     new_u(1) = new_u(1) + dt/dx * vel_flux_1;
-% 
-%     rho_flux_N = rho(N) * u(N);
-%     vel_flux_N = rho(N) * u(N).^2 + p(N);
-%     energy_flux_N = u(N) * (e(N) + p(N));
-% 
-%     new_rho(N) = new_rho(N) - dt/dx * rho_flux_N;
-%     new_u(N) = new_u(N) - dt/dx * vel_flux_N;
-%     new_e(N) = new_e(N) - dt/dx * energy_flux_N;
 
 
 
-    %new_u(1) = new_u(2);
-
-    %new_u(N) = new_u(N - 1);
-    %new_rho(N) = new_rho(N - 1);
-    %new_e(N) = new_e(N - 1);
-
-    %fprintf("totmass: %f\n", sum(new_rho));
     if (time >= plot_time)
         fprintf("time: %f\n", time);
+        telapsed = toc(tstart);
+        fprintf("steps per second: %f\n", nstep / telapsed);
         plot_time = plot_time + dtplot;
         plot_times = [plot_times time];
         totmass = [totmass sum(new_rho(:).*dx(:).*area)];
@@ -438,9 +539,11 @@ while time <= endTime
 
     new_u(N) = new_u(N - 1);
     %new_u(N) = 0;
-    new_rho(N) = new_rho(N - 1);
-    %new_rho(N) = densityR;
-    new_e(N) = pressureR / (gamma-1) + 0.5*new_rho(N - 1) .* new_u(N - 1) .* new_u(N - 1);
+    %new_rho(N) = new_rho(N - 1);
+    new_rho(N) = densityR;
+
+
+    new_e(N) = pressureR / (gamma-1) / cfac(end) + 0.5*new_rho(N - 1) .* new_u(N - 1) .* new_u(N - 1);
     %new_e(N) = new_e(N - 1);
     
     %new_Tn = p(N - 1) / rho(N - 1) / Rgas;
