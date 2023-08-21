@@ -40,12 +40,13 @@ shocktube = 1;
 model_temperature = 1;
 
 %endTime = 3600 * 24 * 3;             % Physical End Time
-endTime = 3600*10;
+endTime = 3600*24*5;
+%endTime = 3600 * 10;
 %endTime = 10;
 %endTime = 60/433;
 %endTime = 400/433;
 
-dtplot = endTime / 100;
+dtplot = endTime / 1000;
 %dt_pplot = 1;
 dt_pplot = endTime / 10;
 CFL     = 0.3;
@@ -54,27 +55,25 @@ CFL     = 0.3;
 %x       = linspace(0, 433 * endTime * 1,N) ;
 %x = linspace(0, 230000, N);
 %x = linspace(0, 1000000, N);
+%x = linspace(0, 150000, N);
 
 fac = 1.1;
 
-dx_init = -1;
+dx_init = -100;
 dx_c = dx_init;
 pos = 0;
 
 x = zeros(1);
-
-
-%while (x(end) > -1000000)
-while (x(end) > -150000)
+while (x(end) > -1000000)
+%while (x(end) > -150000)
     x = [x, x(end) + dx_c];
     dx_c = dx_c * fac;
 end
 
-x = x(end:-1:1) - x(end);
-
 N = length(x) - 1;
 
-%x = logspace(0, 6, N + 1);
+x = x(end:-1:1);
+
 %x = -x(end:-1:1) + x(end);
 xc = 0.5 * (x(1:end-1) + x(2:end));
 %x = linspace(0,100, N + 1);
@@ -229,6 +228,7 @@ e_left = [];
 plot_times = [];
 tot_e = [];
 p_base = [];
+massflow_out = [];
 
 pressure_plot = [];
 e_plot = [];
@@ -290,7 +290,7 @@ while time <= endTime
     energy_flux_e = 0.5 * (energy_flux_t(1:end-1) + energy_flux_t(2:end)) + 0.5 * lambda_e .* (e(1:end-1) - e(2:end));
     
     %if (u(N-1) < a(N-1) && u(N - 1) > 0)
-    if (0)
+    if (1)
         vc = u(N - 1) / a(N - 1);
 
         xd = vc * (1 + gamma) / (2 - vc + vc*gamma);
@@ -355,7 +355,8 @@ while time <= endTime
 
     new_u(2:end-1) = new_mom(2:end-1) ./ new_rho(2:end-1);
 
-    u_fric = (2 * new_u) ./ (1+sqrt(1+(16*dt.*abs(new_u) * lambda) / dia));
+    %u_fric = (2 * new_u) ./ (1+sqrt(1+(16*dt.*abs(new_u) * lambda) / dia));
+    u_fric = (2 * new_u) ./ (1+sqrt(1+(2*dt.*abs(new_u) * lambda) / dia));
     
     new_u = u_fric;
 
@@ -522,6 +523,7 @@ while time <= endTime
         e_left = [e_left sum(new_e(1:floor(N/2)-1))];
         e_right = [e_right sum(new_e(floor(N/2):end))];
         p_base = [p_base p(1)];
+        massflow_out = [massflow_out new_u(N - 1) * rho(N - 1)];
     end
 
     if (time >= pplot_time) 
@@ -538,12 +540,15 @@ while time <= endTime
     %new_e(1) = new_e(2);
 
     new_u(N) = new_u(N - 1);
+    %new_mom_N = u(N) * rho(N) + dt/dx(N) * 0.5 * (u(N - 1) * rho(N - 1) - rho(N) * u(N)) * lambda_e(end);
+    
     %new_u(N) = 0;
-    %new_rho(N) = new_rho(N - 1);
-    new_rho(N) = densityR;
+    new_rho(N) = new_rho(N - 1);
+    %new_rho(N) = rho(N) + dt/dx(N) * 0.5 * (rho(N - 1) - rho(N)) * u(N - 1);
+    %new_u(N) = new_mom_N / new_rho(N);
+    %new_rho(N) = densityR;
 
-
-    new_e(N) = pressureR / (gamma-1) / cfac(end) + 0.5*new_rho(N - 1) .* new_u(N - 1) .* new_u(N - 1);
+    new_e(N) = pressureR / (gamma-1) / cfac(end) + 0.5*new_rho(N) .* new_u(N) .* new_u(N);
     %new_e(N) = new_e(N - 1);
     
     %new_Tn = p(N - 1) / rho(N - 1) / Rgas;

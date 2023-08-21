@@ -1,7 +1,9 @@
 function Z = methane_compression_factor(T, P)
 
-Z = 1;
-return
+%Z = 1;
+%return
+
+T = max(T, 200);
 
 gammag = 0.55;
 Pc = 756.8 - 131 .* gammag - 3.6 * gammag.^2;
