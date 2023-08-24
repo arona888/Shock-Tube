@@ -1,6 +1,6 @@
 function Z = methane_compression_factor(T, P)
 
-%Z = 1;
+%Z = ones(size(T));
 %return
 
 T = max(T, 200);
