@@ -3,7 +3,7 @@
 clearvars -except pressure_plot_save u_plot_save T_plot_save e_plot_save rho_plot_save
 clc
 %% Initialization of Parameters
-N       = 100;             % Number of grid points
+N       = 8000;             % Number of grid points
 %gamma   = 1.4 ;
 %gamma = 1.313; %methane
 Cv = 1709.;
@@ -39,20 +39,21 @@ load_ = 0;
 shocktube = 1;
 model_temperature = 1;
 
-%endTime = 3600 * 24 * 3;             % Physical End Time
-endTime = 3600*24*5;
-%endTime = 3600 * 10;
+%endTime = 3600 * 24 * 5;             % Physical End Time
+%endTime = 3600*5;
+endTime = 3600 * 10;
+%endTime = 60 * 5;
 %endTime = 10;
 %endTime = 60/433;
 %endTime = 400/433;
 
 dtplot = endTime / 1000;
 %dt_pplot = 1;
-dt_pplot = endTime / 10;
+dt_pplot = endTime / 100;
 CFL     = 0.3;
 %% Grid Initialization
 %x       = linspace(0,1,N+1) ;
-%x       = linspace(0, 433 * endTime * 1,N) ;
+%x       = linspace(0, 433 * endTime * 1,N);
 %x = linspace(0, 230000, N);
 %x = linspace(0, 1000000, N);
 %x = linspace(0, 150000, N);
@@ -60,19 +61,37 @@ CFL     = 0.3;
 fac = 1.1;
 
 dx_init = -100;
+%dx_init = -0.1;
 dx_c = dx_init;
 pos = 0;
 
 x = zeros(1);
-while (x(end) > -1000000)
+
+ns1_len = 1224 * 1000;
+ns2_len = 1230 * 1000;
+
+ns2d = 150 * 1000;
+ns1d = 230 * 1000;
+
+%pipe_length = (ns2_len - ns2d);
+pipe_length = (ns1_len - ns1d);
+
+while (x(end) > -pipe_length)
+%while (x(end) > -ns2d)
 %while (x(end) > -150000)
     x = [x, x(end) + dx_c];
     dx_c = dx_c * fac;
 end
 
-N = length(x) - 1;
+x(end) = -pipe_length;
+
+
 
 x = x(end:-1:1);
+
+%x = linspace(0, 433 * endTime * 3,8000);
+
+N = length(x) - 1;
 
 %x = -x(end:-1:1) + x(end);
 xc = 0.5 * (x(1:end-1) + x(2:end));
@@ -92,7 +111,10 @@ time    = 0 ;
 
 if (shocktube)
 
-    pressureR   = 8 * 100000   ;       pressureL   = 165 * 100000 ;
+    pressureR   = 8 * 100000;       
+    %pressureR   = 0.1 * 100000;       
+    %pressureL   = 103 * 100000; ns2
+    pressureL   = 165 * 100000; %ns1
     %%"nordstream" conditions
 
     %pressureR   = 165 * 100000   ;       pressureL   = 400 * 100000 ;
@@ -235,6 +257,7 @@ e_plot = [];
 u_plot = [];
 rho_plot = [];
 T_plot = [];
+pplot_times = [];
 
 plot_time = time;
 
@@ -249,6 +272,8 @@ while time <= endTime
 %     for i=2:N-1
 %         p(i)    = (gamma-1)*(e(i) - 0.5*rho(i)*u(i)*u(i)) ;
 %     end
+
+    
 
     nstep = nstep + 1;
 
@@ -268,7 +293,8 @@ while time <= endTime
 
     %p_  / (new_rho(i) * Cv * T(i) * (gamma - 1)
 
-    a       = sqrt(gamma*p./rho) ;
+    %a       = sqrt(gamma*p./rho)
+    a = sqrt(cfac .* T *Rgas * gamma);
     lamda   = max(a) ;
     max_vel = max(abs(u)) ;
     
@@ -288,9 +314,12 @@ while time <= endTime
     rho_flux_e = 0.5 * (mom(1:end-1) + mom(2:end)) + 0.5 * lambda_e .* (rho(1:end-1) - rho(2:end));
     mom_flux_e = 0.5 * (mom_flux_t(1:end-1) + mom_flux_t(2:end)) + 0.5 * lambda_e .* (mom(1:end-1) - mom(2:end));
     energy_flux_e = 0.5 * (energy_flux_t(1:end-1) + energy_flux_t(2:end)) + 0.5 * lambda_e .* (e(1:end-1) - e(2:end));
-    
-    %if (u(N-1) < a(N-1) && u(N - 1) > 0)
-    if (1)
+
+    choked_bc = 0;
+
+    if (choked_bc)
+    if (u(N-1) < a(N-1) && u(N - 1) > 0)
+    %if (0)
         vc = u(N - 1) / a(N - 1);
 
         xd = vc * (1 + gamma) / (2 - vc + vc*gamma);
@@ -303,7 +332,7 @@ while time <= endTime
 
         poutlet = p0 * (2 / (1 + gamma))^(2*gamma/(gamma - 1));
         rhooutlet = gamma * poutlet / uoutlet^2;
-        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
+        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1) / cfac(N - 1);
 
         %if (poutlet < pressureR) 
         if (0)
@@ -323,6 +352,8 @@ while time <= endTime
             
         end
 
+        Toutlet = (eoutlet - 0.5*rhooutlet.*uoutlet.^2) ./ (Cv .* rhooutlet);
+
         if (poutlet > pressureR) 
             rho_flux_e(end) = rhooutlet * uoutlet;
             energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
@@ -333,13 +364,16 @@ while time <= endTime
         uoutlet = 2 / (1 + gamma) * a(N - 1);
         poutlet = p(N - 1)*(2 / (1 + gamma)) ^ (2 * gamma / (gamma - 1));
         rhooutlet = gamma * poutlet / uoutlet^2;
-        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
+
+        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1) ./ cfac(N-1);
+
+        Toutlet = (eoutlet - 0.5*rhooutlet.*uoutlet.^2) ./ (Cv .* rhooutlet);
 
         rho_flux_e(end) = rhooutlet * uoutlet;
         energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
         mom_flux_e(end) = rhooutlet * uoutlet^2 + poutlet;
     end
-
+    end
     
 
     new_rho(2:end-1) = rho(2:end-1) + dt ./ dx(2:end-1)' .* (rho_flux_e(1:end-1) - rho_flux_e(2:end));
@@ -356,17 +390,17 @@ while time <= endTime
     new_u(2:end-1) = new_mom(2:end-1) ./ new_rho(2:end-1);
 
     %u_fric = (2 * new_u) ./ (1+sqrt(1+(16*dt.*abs(new_u) * lambda) / dia));
-    u_fric = (2 * new_u) ./ (1+sqrt(1+(2*dt.*abs(new_u) * lambda) / dia));
-    
-    new_u = u_fric;
-
-    if (any(imag(new_u) ~= 0))
-        u = 1;
+    use_fric = 1;
+    if (use_fric)
+        u_fric = (2 * new_u) ./ (1+sqrt(1+(2*dt.*abs(new_u) * lambda) / dia));
+        %new_u(1:floor(N/2)) = u_fric(1:floor(N/2));
+        new_u = u_fric;
     end
 
-    if (any(imag(new_e) ~= 0))
-        u = 1;
-    end
+    %fric = new_rho .* sign(new_u).*new_u.^2 / 8 * lambda ./ dia * 4.; %dimension Pa/m
+    %fric_mom = new_u .* new_rho - dt * fric;
+    %new_u = fric_mom ./ new_rho;
+
     
     end
     
@@ -510,30 +544,7 @@ while time <= endTime
 
 
 
-    if (time >= plot_time)
-        fprintf("time: %f\n", time);
-        telapsed = toc(tstart);
-        fprintf("steps per second: %f\n", nstep / telapsed);
-        plot_time = plot_time + dtplot;
-        plot_times = [plot_times time];
-        totmass = [totmass sum(new_rho(:).*dx(:).*area)];
-        mass_right = [mass_right sum(new_rho(floor(N/2):end).*dx(floor(N/2):end).*area)];
-        mass_left = [mass_left sum(new_rho(1:floor(N/2)-1).*dx(floor(N/2):end).*area)];
-        tot_e = [tot_e sum(new_e)];
-        e_left = [e_left sum(new_e(1:floor(N/2)-1))];
-        e_right = [e_right sum(new_e(floor(N/2):end))];
-        p_base = [p_base p(1)];
-        massflow_out = [massflow_out new_u(N - 1) * rho(N - 1)];
-    end
-
-    if (time >= pplot_time) 
-        pplot_time = pplot_time + dt_pplot;
-        pressure_plot = [pressure_plot p];
-        e_plot = [e_plot e];
-        u_plot = [u_plot u];
-        rho_plot = [rho_plot rho];
-        T_plot = [T_plot T];
-    end
+    
 
     %new_u(1) = new_u(2);
     %new_rho(1) = new_rho(2);
@@ -557,6 +568,33 @@ while time <= endTime
 
     %new_e(N/2+1:end) = pressureR / (gamma-1) + 0.5*new_rho(N/2+1:end) .* new_u(N/2+1:end) .* new_u(N/2+1:end);
     %new_u(N/2) = sqrt(gamma * p(N/2) / rho(N/2));
+
+    if (time >= plot_time)
+        fprintf("time: %f\n", time);
+        telapsed = toc(tstart);
+        fprintf("steps per second: %f\n", nstep / telapsed);
+        plot_time = plot_time + dtplot;
+        plot_times = [plot_times time];
+        totmass = [totmass sum(rho(:).*dx(:).*area)];
+        mass_right = [mass_right sum(rho(floor(N/2) + 1:end).*dx(floor(N/2) + 1:end)'.*area)];
+        mass_left = [mass_left sum(rho(1:floor(N/2)-1).*dx(1:floor(N/2)-1)'.*area)];
+        tot_e = [tot_e sum(e)];
+        e_left = [e_left sum(e(1:floor(N/2)-1))];
+        e_right = [e_right sum(e(floor(N/2):end))];
+        p_base = [p_base p(1)];
+        %massflow_out = [massflow_out rho_flux_e(end)];
+        massflow_out = [massflow_out u(N - 1) * rho(N - 1)];
+    end
+
+    if (time >= pplot_time) 
+        pplot_time = pplot_time + dt_pplot;
+        pplot_times = [pplot_times time];
+        pressure_plot = [pressure_plot p];
+        e_plot = [e_plot e];
+        u_plot = [u_plot u];
+        rho_plot = [rho_plot rho];
+        T_plot = [T_plot T];
+    end
     
      rho     = new_rho ;
      u       = new_u ;
