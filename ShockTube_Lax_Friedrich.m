@@ -16,7 +16,7 @@ gamma = Cp / Cv;
 dia = 1.15; %pipe inner diameter
 %rough = 0.05 * 1e-3; %steel
 rough = 0.0015 * 1e-3; %plastic
-lambda = 1 / (-2*log10(rough/(3.7 * dia)))^2;
+lambda = 1 / (-2*log10(rough/(3.7 * dia)))^2; %darcy friction factor (-)
 %lambda = 0.1; %fanning friction coefficient
 %lambda = 1;
 %
@@ -37,13 +37,14 @@ save_ = 1;
 load_ = 0;
 
 shocktube = 1;
-model_temperature = 1;
+model_temperature = 1; %model heat conduction from pipe walls (0 = adiabatic)
+use_fric = 1; %include friction
 
-%endTime = 3600 * 24 * 5;             % Physical End Time
+endTime = 3600 * 24 * 5;             % Physical End Time
 %endTime = 3600*5;
-endTime = 3600 * 10;
+%endTime = 3600 * 10;
 %endTime = 60 * 5;
-%endTime = 10;
+%endTime = 60;
 %endTime = 60/433;
 %endTime = 400/433;
 
@@ -58,11 +59,13 @@ CFL     = 0.3;
 %x = linspace(0, 1000000, N);
 %x = linspace(0, 150000, N);
 
-fac = 1.1;
 
-dx_init = -100;
-%dx_init = -0.1;
-dx_c = dx_init;
+
+dx_init = 100; %length of control volume at opening
+dx_max = 1000; %maximum length of control volume
+fac = 1.1; %increase length of control volumes by this factor away from opening
+
+dx_c = -dx_init;
 pos = 0;
 
 x = zeros(1);
@@ -75,12 +78,15 @@ ns1d = 230 * 1000;
 
 %pipe_length = (ns2_len - ns2d);
 pipe_length = (ns1_len - ns1d);
+%pipe_length = ns1d;
 
 while (x(end) > -pipe_length)
 %while (x(end) > -ns2d)
 %while (x(end) > -150000)
     x = [x, x(end) + dx_c];
-    dx_c = dx_c * fac;
+    if (dx_c > -dx_max)
+        dx_c = dx_c * fac;
+    end
 end
 
 x(end) = -pipe_length;
@@ -111,7 +117,7 @@ time    = 0 ;
 
 if (shocktube)
 
-    pressureR   = 8 * 100000;       
+    pressureR   = 0.1 * 100000;       
     %pressureR   = 0.1 * 100000;       
     %pressureL   = 103 * 100000; ns2
     pressureL   = 165 * 100000; %ns1
@@ -251,6 +257,11 @@ plot_times = [];
 tot_e = [];
 p_base = [];
 massflow_out = [];
+u_out = [];
+rho_out = [];
+e_out = [];
+T_out = [];
+p_out = [];
 
 pressure_plot = [];
 e_plot = [];
@@ -303,105 +314,87 @@ while time <= endTime
 
     %fprintf("time: %f\n", time);
     if (1)
-    mom = rho .* u;
-    lambda_t = abs(u) + sqrt(gamma * p ./ rho);
+        mom = rho .* u;
+        lambda_t = abs(u) + sqrt(gamma * p ./ rho);
 
-    lambda_e = max(lambda_t(1:end-1), lambda_t(2:end));
+        lambda_e = max(lambda_t(1:end-1), lambda_t(2:end));
 
-    mom_flux_t = rho.*u.*u + p;
-    energy_flux_t = u .* (e + p);
+        mom_flux_t = rho.*u.*u + p;
+        energy_flux_t = u .* (e + p);
 
-    rho_flux_e = 0.5 * (mom(1:end-1) + mom(2:end)) + 0.5 * lambda_e .* (rho(1:end-1) - rho(2:end));
-    mom_flux_e = 0.5 * (mom_flux_t(1:end-1) + mom_flux_t(2:end)) + 0.5 * lambda_e .* (mom(1:end-1) - mom(2:end));
-    energy_flux_e = 0.5 * (energy_flux_t(1:end-1) + energy_flux_t(2:end)) + 0.5 * lambda_e .* (e(1:end-1) - e(2:end));
+        rho_flux_e = 0.5 * (mom(1:end-1) + mom(2:end)) + 0.5 * lambda_e .* (rho(1:end-1) - rho(2:end));
+        mom_flux_e = 0.5 * (mom_flux_t(1:end-1) + mom_flux_t(2:end)) + 0.5 * lambda_e .* (mom(1:end-1) - mom(2:end));
+        energy_flux_e = 0.5 * (energy_flux_t(1:end-1) + energy_flux_t(2:end)) + 0.5 * lambda_e .* (e(1:end-1) - e(2:end));
 
-    choked_bc = 0;
+        choked_bc = 0;
 
-    if (choked_bc)
-    if (u(N-1) < a(N-1) && u(N - 1) > 0)
-    %if (0)
-        vc = u(N - 1) / a(N - 1);
+        if (choked_bc)
+            if (u(N-1) < a(N-1) && u(N - 1) > 0)
+                %if (0)
+                vc = u(N - 1) / a(N - 1);
 
-        xd = vc * (1 + gamma) / (2 - vc + vc*gamma);
+                xd = vc * (1 + gamma) / (2 + vc * (gamma - 1));
 
-        uoutlet = u(N - 1) / xd;
+                uoutlet = u(N - 1) / xd;
 
-        c0 = 0.5 * (1 + gamma) * uoutlet;
+                c0 = 0.5 * (1 + gamma) * uoutlet;
 
-        p0 = p(N - 1) * (c0 / a(N - 1)) ^ (2*gamma/ (gamma - 1));
+                p0 = p(N - 1) * (c0 / a(N - 1)) ^ (2*gamma/ (gamma - 1));
 
-        poutlet = p0 * (2 / (1 + gamma))^(2*gamma/(gamma - 1));
-        rhooutlet = gamma * poutlet / uoutlet^2;
-        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1) / cfac(N - 1);
+                poutlet = p0 * (2 / (1 + gamma))^(2*gamma/(gamma - 1));
+                rhooutlet = gamma * poutlet / uoutlet^2;
+                eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1) / cfac(N - 1);
 
-        %if (poutlet < pressureR) 
-        if (0)
-            %if choke pressure is lower than environment pressure, find
-            %point on rarefaction curve corresponding to penv
+                Toutlet = (eoutlet - 0.5*rhooutlet.*uoutlet.^2) ./ (Cv .* rhooutlet);
 
-            coutlet = c0 * (penv / p0) ^ (0.5 - 1/(2 * gamma));
+                if (poutlet > pressureR)
+                    rho_flux_e(end) = rhooutlet * uoutlet;
+                    energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
+                    mom_flux_e(end) = rhooutlet * uoutlet^2 + poutlet;
+                end
 
-            cf = coutlet / c0;
+            elseif (u(N - 1) == 0)
+                uoutlet = 2 / (1 + gamma) * a(N - 1);
+                poutlet = p(N - 1)*(2 / (1 + gamma)) ^ (2 * gamma / (gamma - 1));
+                rhooutlet = gamma * poutlet / uoutlet^2;
 
-            xoutlet = -(cf - 1) * (1 + gamma) / (gamma - 1); %dimensionless distance along rarefaction at outlet
+                eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1) ./ cfac(N-1);
 
-            uoutlet = xoutlet * uoutlet + (1 - xoutlet) * c0;
-            rhooutlet = gamma * poutlet / coutlet^2;
-            poutlet = penv;
+                Toutlet = (eoutlet - 0.5*rhooutlet.*uoutlet.^2) ./ (Cv .* rhooutlet);
 
-            
+                rho_flux_e(end) = rhooutlet * uoutlet;
+                energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
+                mom_flux_e(end) = rhooutlet * uoutlet^2 + poutlet;
+            end
         end
 
-        Toutlet = (eoutlet - 0.5*rhooutlet.*uoutlet.^2) ./ (Cv .* rhooutlet);
 
-        if (poutlet > pressureR) 
-            rho_flux_e(end) = rhooutlet * uoutlet;
-            energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
-            mom_flux_e(end) = rhooutlet * uoutlet^2 + poutlet;
+        new_rho(2:end-1) = rho(2:end-1) + dt ./ dx(2:end-1)' .* (rho_flux_e(1:end-1) - rho_flux_e(2:end));
+        new_mom(2:end-1) = mom(2:end-1) + dt ./ dx(2:end-1)' .* (mom_flux_e(1:end-1) - mom_flux_e(2:end));
+        new_e(2:end-1) = e(2:end-1) + dt./dx(2:end-1)' .* (energy_flux_e(1:end-1) - energy_flux_e(2:end));
+
+
+
+        new_rho(1) = rho(1) - dt/dx(1) * rho_flux_e(1);
+        mom1 = rho(1)*u(1) - dt/dx(1) * (mom_flux_e(1) - (0*rho(1)*u(1).^2 +p(1)));
+        new_u(1) = mom1 / new_rho(1);
+        new_e(1) = e(1) - dt/dx(1) * (energy_flux_e(1) - 0*(u(1) * ( e(1) + p(1) )));
+
+        new_u(2:end-1) = new_mom(2:end-1) ./ new_rho(2:end-1);
+
+        %u_fric = (2 * new_u) ./ (1+sqrt(1+(16*dt.*abs(new_u) * lambda) / dia));
+        
+        if (use_fric)
+            u_fric = (2 * new_u) ./ (1+sqrt(1+(2*dt.*abs(new_u) * lambda) / dia));
+            %new_u(1:floor(N/2)) = u_fric(1:floor(N/2));
+            new_u = u_fric;
         end
 
-    elseif (u(N - 1) == 0)
-        uoutlet = 2 / (1 + gamma) * a(N - 1);
-        poutlet = p(N - 1)*(2 / (1 + gamma)) ^ (2 * gamma / (gamma - 1));
-        rhooutlet = gamma * poutlet / uoutlet^2;
+        %fric = new_rho .* sign(new_u).*new_u.^2 / 8 * lambda ./ dia * 4.; %dimension Pa/m
+        %fric_mom = new_u .* new_rho - dt * fric;
+        %new_u = fric_mom ./ new_rho;
 
-        eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1) ./ cfac(N-1);
 
-        Toutlet = (eoutlet - 0.5*rhooutlet.*uoutlet.^2) ./ (Cv .* rhooutlet);
-
-        rho_flux_e(end) = rhooutlet * uoutlet;
-        energy_flux_e(end) = uoutlet * (eoutlet + poutlet);
-        mom_flux_e(end) = rhooutlet * uoutlet^2 + poutlet;
-    end
-    end
-    
-
-    new_rho(2:end-1) = rho(2:end-1) + dt ./ dx(2:end-1)' .* (rho_flux_e(1:end-1) - rho_flux_e(2:end));
-    new_mom(2:end-1) = mom(2:end-1) + dt ./ dx(2:end-1)' .* (mom_flux_e(1:end-1) - mom_flux_e(2:end));
-    new_e(2:end-1) = e(2:end-1) + dt./dx(2:end-1)' .* (energy_flux_e(1:end-1) - energy_flux_e(2:end));
-
-    
-
-    new_rho(1) = rho(1) - dt/dx(1) * rho_flux_e(1);
-    mom1 = rho(1)*u(1) - dt/dx(1) * (mom_flux_e(1) - (0*rho(1)*u(1).^2 +p(1)));
-    new_u(1) = mom1 / new_rho(1);
-    new_e(1) = e(1) - dt/dx(1) * (energy_flux_e(1) - 0*(u(1) * ( e(1) + p(1) )));
-
-    new_u(2:end-1) = new_mom(2:end-1) ./ new_rho(2:end-1);
-
-    %u_fric = (2 * new_u) ./ (1+sqrt(1+(16*dt.*abs(new_u) * lambda) / dia));
-    use_fric = 1;
-    if (use_fric)
-        u_fric = (2 * new_u) ./ (1+sqrt(1+(2*dt.*abs(new_u) * lambda) / dia));
-        %new_u(1:floor(N/2)) = u_fric(1:floor(N/2));
-        new_u = u_fric;
-    end
-
-    %fric = new_rho .* sign(new_u).*new_u.^2 / 8 * lambda ./ dia * 4.; %dimension Pa/m
-    %fric_mom = new_u .* new_rho - dt * fric;
-    %new_u = fric_mom ./ new_rho;
-
-    
     end
     
     if (0)
@@ -584,6 +577,11 @@ while time <= endTime
         p_base = [p_base p(1)];
         %massflow_out = [massflow_out rho_flux_e(end)];
         massflow_out = [massflow_out u(N - 1) * rho(N - 1)];
+        u_out = [u_out u(N - 1)];
+        rho_out = [rho_out, rho(N - 1)];
+        e_out = [e_out e(N - 1)];
+        T_out = [T_out T(N - 1)];
+        p_out = [p_out p(N - 1)];
     end
 
     if (time >= pplot_time) 
