@@ -3,29 +3,25 @@
 clearvars -except pressure_plot_save u_plot_save T_plot_save e_plot_save rho_plot_save
 clc
 %% Initialization of Parameters
-N       = 8000;             % Number of grid points
-%gamma   = 1.4 ;
-%gamma = 1.313; %methane
-Cv = 1709.;
-Cp = 2232.;
+
+Cv = 1709.; %heat capacity of methane at constant volume (J/(K*Kg))
+Cp = 2232.; %heat capacity of methane at constant pressure (J/(K*Kg))
 Rgas = Cp - Cv;
 gamma = Cp / Cv;
 
+T0 = 285; %ambient temperature (K)
+p0_ambient = 8 * 100000; %ambient pressure (Pa)
+p0_pipe = 165 * 100000; %ns1 initial pipe pressure (Pa)
+%p0_pipe = 103 * 100000; %ns2 initial pipe pressure (Pa)
 
-
-dia = 1.15; %pipe inner diameter
-%rough = 0.05 * 1e-3; %steel
-rough = 0.0015 * 1e-3; %plastic
+dia = 1.15; %pipe inner diameter (m)
+%rough = 0.05 * 1e-3; %steel (m)
+rough = 0.0015 * 1e-3; %plastic (m)
 lambda = 1 / (-2*log10(rough/(3.7 * dia)))^2; %darcy friction factor (-)
-%lambda = 0.1; %fanning friction coefficient
-%lambda = 1;
-%
 %lambda = 0.0;
 
-
-
-area = dia.^2/4*pi;
-circum = dia * pi;
+area = dia.^2/4*pi; %(m2)
+circum = dia * pi; %(m)
 Kconcrete = 4; %thermal conductivity (W/(mK))
 Ksteel = 50;
 
@@ -39,8 +35,10 @@ load_ = 0;
 shocktube = 1;
 model_temperature = 1; %model heat conduction from pipe walls (0 = adiabatic)
 use_fric = 1; %include friction
+choked_bc = 0; %force approximate choked flow at outlet
 
-endTime = 3600 * 24 * 5;             % Physical End Time
+%duration of simulation (s)
+endTime = 3600 * 24 * 3;
 %endTime = 3600*5;
 %endTime = 3600 * 10;
 %endTime = 60 * 5;
@@ -53,36 +51,27 @@ dtplot = endTime / 1000;
 dt_pplot = endTime / 100;
 CFL     = 0.3;
 %% Grid Initialization
-%x       = linspace(0,1,N+1) ;
-%x       = linspace(0, 433 * endTime * 1,N);
-%x = linspace(0, 230000, N);
-%x = linspace(0, 1000000, N);
-%x = linspace(0, 150000, N);
 
-
-
-dx_init = 100; %length of control volume at opening
-dx_max = 1000; %maximum length of control volume
-fac = 1.1; %increase length of control volumes by this factor away from opening
+dx_init = 100; %length of control volume at opening (m)
+dx_max = 1000; %maximum length of control volume (m)
+fac = 1.1; %increase length of control volumes by this factor away from opening (-)
 
 dx_c = -dx_init;
 pos = 0;
 
 x = zeros(1);
 
-ns1_len = 1224 * 1000;
-ns2_len = 1230 * 1000;
+ns1_len = 1224 * 1000; %length of russian side of ns1(m)
+ns2_len = 1230 * 1000;  %length of russian side of ns2(m)
 
-ns2d = 150 * 1000;
-ns1d = 230 * 1000;
+ns1d = 230 * 1000; %length of german side of ns1 (m)
+ns2d = 150 * 1000; %length of german side of ns2 (m)
 
-%pipe_length = (ns2_len - ns2d);
-pipe_length = (ns1_len - ns1d);
-%pipe_length = ns1d;
+pipe_length = (ns2_len - ns2d);
+%pipe_length = (ns1_len - ns1d);
+%pipe_length = (ns2_)
 
 while (x(end) > -pipe_length)
-%while (x(end) > -ns2d)
-%while (x(end) > -150000)
     x = [x, x(end) + dx_c];
     if (dx_c > -dx_max)
         dx_c = dx_c * fac;
@@ -101,32 +90,15 @@ N = length(x) - 1;
 
 %x = -x(end:-1:1) + x(end);
 xc = 0.5 * (x(1:end-1) + x(2:end));
-%x = linspace(0,100, N + 1);
-%dx = xc(2) - xc(1);
+
 dx = diff(x);
-%xc      = 0.5 * ( x(1:N) + x(2:N+1) ) ;
-%xc(1)   = 0 ;               % Xmin
-%xc(N)   = 1 ;               % Xmax
-%xc(N)   = 100 ;               % Xmax
 time    = 0 ;
 %% Initial Conidtions
-%denistyR    = 0.125 ;       densityL    = 1.0 ;
-%pressureR   = 0.1   ;       pressureL   = 1.0 ;
-
-%
 
 if (shocktube)
 
-    pressureR   = 0.1 * 100000;       
-    %pressureR   = 0.1 * 100000;       
-    %pressureL   = 103 * 100000; ns2
-    pressureL   = 165 * 100000; %ns1
-    %%"nordstream" conditions
-
-    %pressureR   = 165 * 100000   ;       pressureL   = 400 * 100000 ;
-    
-    T0 = 285;
-    %penv = 30 * 100000;
+    pressureR = p0_ambient;
+    pressureL = p0_pipe;
 
     cfacR = methane_compression_factor(T0, pressureR);
     cfacL = methane_compression_factor(T0, pressureL);
@@ -138,17 +110,11 @@ if (shocktube)
     umid = 2 / (1 + gamma) * cl;
     
     fact = 1. - 0.5 * (gamma-1) * umid / cl;
-    
-    rhomid = densityL * fact ^ (2. / (gamma - 1));
-    
-    pmid = pressureL * fact ^ (2. * gamma / (gamma-1));
-    
+        
     rho     = zeros(N,1) ;
     p       = zeros(N,1) ;
     u       = zeros(N,1) ;
     
-    
-    %PV=nRT => PV ~ rho*T
     
     for i =  1:N
         %if i<=N/2
@@ -219,27 +185,9 @@ u0 = u;
 p0 = p;
 rho0 = rho;
 
-%T = p ./ (rho .* Rgas);
 
 T = ones(N,1) * T0;
 e = T * Cv .* rho;
-
-% for i =  1:N
-%     if i<=N - 1
-%     %if i<=N
-%         rho(i)  = densityL  ;
-%         p(i)    = pressureL ;
-%     else
-%         rho(i)  = denistyR  ;
-%         p(i)    = pressureR ;
-%     end
-% end
-
-
-%e   = p/(gamma-1) + 0.5*rho.*u.*u ;
-
-%p = (gamma - 1) * (e  - 0.5 * rho * u * u)
-
 
 %%
 new_rho = rho ;
@@ -279,45 +227,30 @@ nstep = 0;
 tstart = tic;
 
 while time <= endTime
-%     
-%     for i=2:N-1
-%         p(i)    = (gamma-1)*(e(i) - 0.5*rho(i)*u(i)*u(i)) ;
-%     end
-
     
 
     nstep = nstep + 1;
-
-    %p(2:N-1) = (gamma-1)*(e(2:N-1) - 0.5*rho(2:N-1).*u(2:N-1).*u(2:N-1)) ;
-    %T(2:N-1) = p(2:N-1) ./ (rho(2:N-1) * Rgas);
-
-    %p = (gamma-1)*(e - 0.5*rho.*u.*u) ;
-    %T = p ./ (rho * Rgas);
-
     
     T = (e - 0.5*rho.*u.^2) ./ (Cv .* rho);
-    %previous time step pressure to avoid making this insanely
-    %complicated...
-    cfac = methane_compression_factor(T, p);
+    %calculate compression factor based on previous time step pressure 
+    %to avoid making this insanely complicated...
     
-    p = T .* rho * Rgas .* cfac;
+    for i = 1:1
+        cfac = methane_compression_factor(T, p);
+        p = T .* rho * Rgas .* cfac;
+    end
 
-    %p_  / (new_rho(i) * Cv * T(i) * (gamma - 1)
-
-    %a       = sqrt(gamma*p./rho)
-    a = sqrt(cfac .* T *Rgas * gamma);
-    lamda   = max(a) ;
-    max_vel = max(abs(u)) ;
+    a = sqrt(cfac .* T *Rgas * gamma); %speed of sound
     
-    dt      = min(CFL./(a(:)+abs(u(:))) .* dx(:)) ;  % adjustable Time Step
+    dt      = min(CFL./(a(:)+abs(u(:))) .* dx(:)) ;  % cfl condition time step
     time    = time + dt ;
 
-    %fprintf("time: %f\n", time);
     if (1)
         mom = rho .* u;
-        lambda_t = abs(u) + sqrt(gamma * p ./ rho);
+        lambda_t = abs(u) + a;
 
-        lambda_e = max(lambda_t(1:end-1), lambda_t(2:end));
+        
+        lambda_e = max(lambda_t(1:end-1), lambda_t(2:end)); %numerical diffusion
 
         mom_flux_t = rho.*u.*u + p;
         energy_flux_t = u .* (e + p);
@@ -326,11 +259,10 @@ while time <= endTime
         mom_flux_e = 0.5 * (mom_flux_t(1:end-1) + mom_flux_t(2:end)) + 0.5 * lambda_e .* (mom(1:end-1) - mom(2:end));
         energy_flux_e = 0.5 * (energy_flux_t(1:end-1) + energy_flux_t(2:end)) + 0.5 * lambda_e .* (e(1:end-1) - e(2:end));
 
-        choked_bc = 0;
+        
 
         if (choked_bc)
             if (u(N-1) < a(N-1) && u(N - 1) > 0)
-                %if (0)
                 vc = u(N - 1) / a(N - 1);
 
                 xd = vc * (1 + gamma) / (2 + vc * (gamma - 1));
@@ -374,7 +306,7 @@ while time <= endTime
         new_e(2:end-1) = e(2:end-1) + dt./dx(2:end-1)' .* (energy_flux_e(1:end-1) - energy_flux_e(2:end));
 
 
-
+        %closed BC on left side of pipe
         new_rho(1) = rho(1) - dt/dx(1) * rho_flux_e(1);
         mom1 = rho(1)*u(1) - dt/dx(1) * (mom_flux_e(1) - (0*rho(1)*u(1).^2 +p(1)));
         new_u(1) = mom1 / new_rho(1);
@@ -385,139 +317,23 @@ while time <= endTime
         %u_fric = (2 * new_u) ./ (1+sqrt(1+(16*dt.*abs(new_u) * lambda) / dia));
         
         if (use_fric)
+            %implicit formula for friction to ensure stability
+            
             u_fric = (2 * new_u) ./ (1+sqrt(1+(2*dt.*abs(new_u) * lambda) / dia));
-            %new_u(1:floor(N/2)) = u_fric(1:floor(N/2));
             new_u = u_fric;
+            
+            %explicit friction
+            %fric = new_rho .* sign(new_u).*new_u.^2 / 8 * lambda ./ dia * 4.; %dimension Pa/m
+            %fric_mom = new_u .* new_rho - dt * fric;
+            %new_u = fric_mom ./ new_rho;
         end
 
-        %fric = new_rho .* sign(new_u).*new_u.^2 / 8 * lambda ./ dia * 4.; %dimension Pa/m
-        %fric_mom = new_u .* new_rho - dt * fric;
-        %new_u = fric_mom ./ new_rho;
+        
+        
 
 
     end
     
-    if (0)
-    for i=2:N-1
-        
-
-        mom_R       = rho(i+1)*u(i+1) ;     rho_R = rho(i+1) ;      u_R = u(i+1) ;      p_R = p(i+1) ;
-        mom_P       = rho(i)*u(i)     ; 	rho_P = rho(i)   ;      u_P = u(i)   ;      p_P = p(i)   ;
-        mom_L       = rho(i-1)*u(i-1) ;    	rho_L = rho(i-1) ;      u_L = u(i-1) ;      p_L = p(i-1) ;
-
-        lambda_P = abs(u(i)) + sqrt(gamma * p(i) / rho(i));
-        lambda_L = abs(u(i - 1)) + sqrt(gamma * p(i - 1) / rho(i - 1));
-        lambda_R = abs(u(i + 1)) + sqrt(gamma * p(i + 1) / rho(i + 1));
-
-        lambda_L = max(lambda_L, lambda_P);
-        lambda_R = max(lambda_R, lambda_P);
-        
-        vel_flux_R  = rho_R*u_R*u_R +p_R ;    e_R = e(i+1) ;
-        vel_flux_P  = rho_P*u_P*u_P +p_P ;    e_P = e(i)   ;
-        vel_flux_L  = rho_L*u_L*u_L +p_L ;    e_L = e(i-1) ;
-        
-        energy_flux_R   = u_R * ( e_R + p_R ) ;
-        energy_flux_P   = u_P * ( e_P + p_P ) ;
-        energy_flux_L   = u_L * ( e_L + p_L ) ;
-        
-        rho_fluxR   = 0.5*( mom_P + mom_R ) -0.5*lambda_R*( rho_R - rho_P ) ;
-        rho_fluxL   = 0.5*( mom_P + mom_L ) -0.5*lambda_L*( rho_P - rho_L ) ;
-        
-        vel_fluxR   = 0.5*( vel_flux_P + vel_flux_R ) -0.5*lambda_R*( mom_R - mom_P ) ;
-        vel_fluxL   = 0.5*( vel_flux_P + vel_flux_L ) -0.5*lambda_L*( mom_P - mom_L ) ;
-        
-        energy_fluxR    = 0.5*( energy_flux_P + energy_flux_R ) -0.5*lambda_R*( e_R - e_P );
-        energy_fluxL    = 0.5*( energy_flux_P + energy_flux_L ) -0.5*lambda_L*( e_P - e_L );
-
-        if (i == N - 1)
-            if (u(N-1) < a(N-1) && u(N - 1) > 0) 
-                vc = u(N - 1) / a(N - 1);
-
-                xd = vc * (1 + gamma) / (2 - vc + vc*gamma);
-
-                uoutlet = u(N - 1) / xd;
-
-                c0 = 0.5 * (1 + gamma) * uoutlet;
-
-                p0 = p(N - 1) * (c0 / a(N - 1)) ^ (2*gamma/ (gamma - 1));
-
-                poutlet = p0 * (2 / (1 + gamma))^(2*gamma/(gamma - 1));
-
-                rhooutlet = gamma * poutlet / uoutlet^2;
-
-                eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
-
-                
-
-            elseif (u(N - 1) == 0) 
-                uoutlet = 2 / (1 + gamma) * a(N - 1);
-                poutlet = p(N - 1)*(2 / (1 + gamma)) ^ (2 * gamma / (gamma - 1));
-                rhooutlet = gamma * poutlet / uoutlet^2;
-                eoutlet = uoutlet.^2*rhooutlet/2 + poutlet / (gamma - 1);
-            end
-
-            rho_fluxR = rhooutlet * uoutlet;
-            energy_fluxR = uoutlet * (eoutlet + poutlet);
-            vel_fluxR = rhooutlet * uoutlet^2 + poutlet;
-        %if (0)
-            %energy_fluxR = energy_flux_P;
-            %if (0)
-            %    vel_fluxR = vel_flux_P;
-            %end
-            %rho_fluxR = mom_P;
-        end
-        
-
-
-
-        vel_flux    = mom_P - dt/dx(i) * ( vel_fluxR - vel_fluxL ) ;
-        
-        new_rho(i)  = rho_P - dt/dx(i) * ( rho_fluxR - rho_fluxL ) ;
-        
-        %vel_flux = mom_P - dt/dx * ( vel_fluxR - vel_fluxL ) - dt*fric + dt*0;
-        
-        new_u(i)    = vel_flux/new_rho(i) ;
-        new_e(i)    = e_P - dt/dx(i) * ( energy_fluxR - energy_fluxL ) ;
-
-        if (i == 2)
-            new_rho(1) = rho(1) - dt/dx(i) * rho_fluxL;
-            mom1 = rho(1)*u(1) - dt/dx(i) * (vel_fluxL - (0*rho(1)*u(1).^2 +p(1)));
-            new_u(1) = mom1 / new_rho(1);
-            new_e(1) = e(1) - dt/dx(i) * (energy_fluxL - 0*(u(1) * ( e(1) + p(1) )));
-        end
-% 
-%         if (i == N - 1)
-%             new_rho(N) = rho(N) + dt/dx * rho_fluxR;
-%             new_u(N) = u(N) + dt/dx * vel_fluxR;
-%             new_e(N) = e(N) + dt/dx * vel_fluxR;
-%         end
-
-        
-        %if (shocktube)
-        if (0)
-            if (i <= N/2) 
-                u_fric = (2 * u_P) / (1+sqrt(1+(16*dt*u_P * lambda) / dia));
-        %fric = 0;
-            else
-                u_fric = u_P;
-            end
-        else
-            %u_fric = (-dia + sqrt(dia*(dia + 16 * dt * u_P* lambda))) / (8 * dt * lambda);
-            %fric = rho_P * sign(u_P)*u_P^2 / 8 * lambda / dia * 4.; %dimension Pa/m
-            u_fric = (2 * u_P) / (1+sqrt(1+(16*dt*u_P * lambda) / dia));
-        end
-
-        %dU_fric = -dt * fric / new_rho(i);
-        dU_fric = u_fric - u_P;
-        dE_fric = new_rho(i) * ((new_u(i) + dU_fric)^2 - new_u(i)^2) / 2; %kinetic energy lost to friction
-
-        new_u(i) = new_u(i) + dU_fric;
-        %new_e(i) = new_e(i) + dE_fric;
-
-        
-    end
-
-    end
 
     if (model_temperature)
         new_T = (new_e - 0.5.*u.*u.*rho) ./ (rho * Cv);
@@ -529,39 +345,14 @@ while time <= endTime
         new_e = new_e + deltaE;
     end
 
-    %new_T = T0 + delta_T * exp(-dt * wattperkelvinperm3 / (rho*Cv));
-
-
-
-
-
-
-
-    
-
-    %new_u(1) = new_u(2);
-    %new_rho(1) = new_rho(2);
-    %new_e(1) = new_e(2);
-
+    %approximate open BC
     new_u(N) = new_u(N - 1);
-    %new_mom_N = u(N) * rho(N) + dt/dx(N) * 0.5 * (u(N - 1) * rho(N - 1) - rho(N) * u(N)) * lambda_e(end);
-    
-    %new_u(N) = 0;
     new_rho(N) = new_rho(N - 1);
-    %new_rho(N) = rho(N) + dt/dx(N) * 0.5 * (rho(N - 1) - rho(N)) * u(N - 1);
-    %new_u(N) = new_mom_N / new_rho(N);
-    %new_rho(N) = densityR;
-
+    %force pressure to ambient pressure in last cell
     new_e(N) = pressureR / (gamma-1) / cfac(end) + 0.5*new_rho(N) .* new_u(N) .* new_u(N);
-    %new_e(N) = new_e(N - 1);
-    
-    %new_Tn = p(N - 1) / rho(N - 1) / Rgas;
-    %new_rho(N) = pressureR / (new_Tn * Rgas);
-    %T(2:N-1) = p(2:N-1) ./ (rho(2:N-1) * Rgas);
 
-    %new_e(N/2+1:end) = pressureR / (gamma-1) + 0.5*new_rho(N/2+1:end) .* new_u(N/2+1:end) .* new_u(N/2+1:end);
-    %new_u(N/2) = sqrt(gamma * p(N/2) / rho(N/2));
 
+    %save variables
     if (time >= plot_time)
         fprintf("time: %f\n", time);
         telapsed = toc(tstart);
@@ -597,15 +388,6 @@ while time <= endTime
      rho     = new_rho ;
      u       = new_u ;
      e       = new_e ;
-
-     %rho(1:400)     = new_rho(1:400) ;
-     %u(1:400)       = new_u(1:400) ;
-     %e(1:400)       = new_e(1:400) ;
-
-     %rho(N) = rho(N - 1);
-     %rho(N) = densityR;
-     %u(N) = u(N - 1);
-     %e(N) = u(N)^2 * rho(N)/2 + 1 / (gamma - 1) * pressureR;
      
      
 end
@@ -619,33 +401,3 @@ if (save_)
     u_plot_save = u_plot;
 end
 
-% pressure = dlmread('pressure.dat') ;
-% density  = dlmread('density.dat')  ;
-% velocity = dlmread('velocity.dat') ;
-% 
-% figure(1)
-% hold on
-% %plot(density(:,1),density(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
-% plot(xc, rho,'k','MarkerSize',12,'MarkerIndices',1:10:141,'LineWidth',2);
-% xlabel(' x ','FontSize',18,'FontWeight','bold');
-% ylabel(' Density ','FontSize',18,'FontWeight','bold');
-% legend('Lax Friedrich','Location','northeast','FontSize',16,'FontWeight','bold');
-% %print(gcf,'Density.jpg','-dpng','-r300');
-% 
-% figure(2)
-% hold on
-% %plot(pressure(:,1),pressure(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
-% plot(xc, p,'k','MarkerSize',12,'MarkerIndices',1:10:141,'LineWidth',2);
-% xlabel(' x ','FontSize',18,'FontWeight','bold');
-% ylabel(' Pressure ','FontSize',18,'FontWeight','bold');
-% legend('Lax Friedrich','Location','northeast','FontSize',16,'FontWeight','bold');
-% %print(gcf,'Pressure.jpg','-dpng','-r300');
-% 
-% figure(3)
-% hold on
-% %plot(velocity(:,1),velocity(:,2),'r--','MarkerSize',12,'MarkerIndices',1:10:length(velocity),'LineWidth',2);
-% plot(xc, u,'k','MarkerSize',12,'MarkerIndices',1:10:141,'LineWidth',2);
-% xlabel(' x ','FontSize',18,'FontWeight','bold');
-% ylabel(' Velocity ','FontSize',18,'FontWeight','bold');
-% legend('Lax Friedrich','Location','south','FontSize',16,'FontWeight','bold');
-%print(gcf,'Velocity.jpg','-dpng','-r300');
